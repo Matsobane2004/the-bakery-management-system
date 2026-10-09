@@ -169,7 +169,13 @@
       els.address.value = "";
       els.notes.value = "";
     } catch (err) {
-      setMessage(err.status === 401 ? "Your sign-in has expired. Please sign in again." : err.message, true);
+      // The server names a product that is no longer sold as "Product 16 not found or unavailable"
+      const gone = err.status === 404 && /Product (\d+)/.exec(err.message);
+      const goneItem = gone && cart.find((i) => i.id === Number(gone[1]));
+      setMessage(
+        err.status === 401 ? "Your sign-in has expired. Please sign in again." :
+        goneItem ? goneItem.name + " is no longer available. Remove it from your cart to place your order." :
+        err.message, true);
     } finally {
       placing = false;
       render();
@@ -178,14 +184,23 @@
 
   // When the menu arrives from the server, match items that were added earlier
   // (e.g. from the backup menu) to the real products, and use the current prices.
+  // Items that are no longer on the menu are taken out, so they can't block the order.
   document.addEventListener("bakery:menu-loaded", (e) => {
     const products = e.detail || [];
-    cart.forEach((item) => {
+    if (!products.length) return; // menu being updated: keep the cart as it is
+    const removed = [];
+    cart = cart.filter((item) => {
       const match = products.find((p) => (item.id ? p.id === item.id : p.name.toLowerCase() === item.name.toLowerCase()));
-      if (match) { item.id = match.id; item.name = match.name; item.price = match.price; }
+      if (!match) { removed.push(item.name); return false; }
+      item.id = match.id; item.name = match.name; item.price = match.price;
+      return true;
     });
     saveCart();
     render();
+    if (removed.length) {
+      setMessage(removed.join(", ") + (removed.length === 1 ? " is" : " are") + " no longer on the menu, so " +
+        (removed.length === 1 ? "it was" : "they were") + " taken out of your cart.", true);
+    }
   });
 
   // "Add" buttons (delegated, because the menu is drawn after the page loads)
